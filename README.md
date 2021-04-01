@@ -25,7 +25,7 @@ can be useful when adjusting the machine learning parameters.
 5. hasten_analyze_simulation.py -- calculate recall on simulated data
 
 6. glide.protocol -- example protocol on how to run Glide
-7 .simulate.protocol -- example protocol on how to run simulations
+7. simulate.protocol -- example protocol on how to run simulations
 
 8. glide_confgen.py -- glide wrappers
 9. glide_confgen.sh

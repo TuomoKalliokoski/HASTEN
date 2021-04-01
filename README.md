@@ -173,17 +173,17 @@ python hasten.py -m db.db -p para_simulate.protocol --hand-operate dock -i 1
 python hasten.py -m db.db -p para_simulate.protocol --hand-operate train -i 2
 python hasten.py -m db.db -p para_simulate.protocol --hand-operate split-pred -i 2
 
-    => copy PRED1-PRED12 to another computers and iter2 model also
+Copy PRED1-PRED12 to another computers and iter2 model also
 
 At each computer:
 python hasten.py -p para_simulate.protocol --hand-operate pred -i 2
 
-    => after finished, copy *output* into one directory back where db.db is
+After finished, copy *output* into one directory back where db.db is
 
 python hasten.py -m para_simulate.protocol --hand-operate import-pred
 python hasten.py -m para_simulate.protocol --hand-operate dock -i 2
 
-    => now you have docked two iterations, continue with training iter3 model
+Now you have docked two iterations, continue with training iter3 model
 
 ********
 * TIPS *

@@ -1,6 +1,7 @@
 HASTEN (macHine leArning booSTEd dockiNg), Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>
-
+***************
 * INTRODUCTION
+*************
 HASTEN is a tool that makes it easier to run machine learning boosted
 virtual screening workflows. It is written in very general Python without
 relying in non-standard libraries so it is easy to run in any
@@ -45,8 +46,9 @@ can be useful when adjusting the machine learning parameters.
 Tested also Azure cloud VM with Tesla V100 and CUDA 11.1 plus
 AWS cloud VM with Tesla V100 and CUDA 10.1.
 
+**********************************
 * INSTALLING CHEMPROP ON CENTOS 7
-
+**********************************
 NOTE: Please see chemprop webpage for up-to-date instructions. Here is just
 what I did to get the program running on Jan 2020.
 
@@ -80,8 +82,9 @@ your calculation card on multiple GPU systems!
     several computers, it is good idea to use different copies for each
     computer (you may define this file in protocol file).
 
+************************
 * HOW TO RUN SIMULATION
-
+************************
 PREPARING
 
 1. You should have the SMILES of the whole database (for example, mols.smi)
@@ -114,7 +117,9 @@ To calculate recalls at top 1%:
 
 python hasten_analyze_simulation -m testscreen.db -d dock.txt
 
+******************************
 * HOW TO RUN HASTEN WITH GLIDE
+******************************
 
 PREPARING
 
@@ -143,7 +148,9 @@ RUNNING SCREEN
 
 python hasten.py -m realscreen.db -p glide.protocol
 
+********************
 * HAND-OPERATED MODE
+********************
 
 When working with large (100M+) databases, even the ML calculations start
 to take very long time and several computers are needed.
@@ -172,8 +179,9 @@ python hasten.py -m para_simulate.protocol --hand-operate dock -i 2
 
 Now you have docked two iterations, continue with training iter3 model
 
+******
 * TIPS
-
+******
 - you may want to start from some other iteration than 1 sometimes. This 
 can be defined by using "-i" parameter for hasten.py
 
@@ -183,8 +191,9 @@ doing docking (useful when your docking script can take SMILES input directly).
 - running long runs distributed across different computers is better done
 via the hand-operated mode
 
+***************************************************
 * INPUT/OUTPUT DATA FORMATS FOR ADDITIONAL PLUG-INS
-
+***************************************************
 Conformer generation:
 
     - hasten.py starts the confgen-script giving two parameters:

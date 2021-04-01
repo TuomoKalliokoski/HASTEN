@@ -1,5 +1,4 @@
 HASTEN (macHine leArning booSTEd dockiNg), Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>
-Version 0.1 (used to produce the results in the manuscript)
 
 ****************
 * INTRODUCTION *

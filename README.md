@@ -1,8 +1,6 @@
 HASTEN (macHine leArning booSTEd dockiNg), Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>
 
-****************
-* INTRODUCTION *
-****************
+* INTRODUCTION
 HASTEN is a tool that makes it easier to run machine learning boosted
 virtual screening workflows. It is written in very general Python without
 relying in non-standard libraries so it is easy to run in any
@@ -18,31 +16,27 @@ There is also simulation mode, which allows you to run benchmarks using
 existing docking_scores without in reality doing anything in 3D. This mode
 can be useful when adjusting the machine learning parameters.
 
-****************************
-* DESCRIPTION OF THE FILES *
-****************************
-hasten.py -- main program
-hasten_import.py -- import data
-hasten_export.py -- export data
-hasten_import_simulation.py -- allow simulation data to be used
-hasten_analyze_simulation.py -- calculate recall on simulated data
+* DESCRIPTION OF THE FILES
+1. hasten.py -- main program
+2. hasten_import.py -- import data
+3. hasten_export.py -- export data
+4. hasten_import_simulation.py -- allow simulation data to be used
+5. hasten_analyze_simulation.py -- calculate recall on simulated data
 
-glide.protocol -- example protocol on how to run Glide
-simulate.protocol -- example protocol on how to run simulations
+6. glide.protocol -- example protocol on how to run Glide
+7 .simulate.protocol -- example protocol on how to run simulations
 
-glide_confgen.py -- glide wrappers
-glide_confgen.sh
-glide_docking.py
-glide_docking.sh
+8. glide_confgen.py -- glide wrappers
+9. glide_confgen.sh
+10. glide_docking.py
+11. glide_docking.sh
 
-simulate_confgen.py -- simulation wrappers
-simulate_confgen.sh
-simulate_docking.py
-simulate_docking.sh
+12. simulate_confgen.py -- simulation wrappers
+13. simulate_confgen.sh
+14. simulate_docking.py
+15. simulate_docking.sh
 
-************************************
-* VERSIONS USED IN THE DEVELOPMENT *
-************************************
+* VERSIONS USED IN THE DEVELOPMENT
 - chemprop v1.1.0 (Jan 2020)
 - CUDA driver v10.1 and v10.2
 - anaconda3, conda 4.9.2
@@ -51,9 +45,8 @@ simulate_docking.sh
 Tested also Azure cloud VM with Tesla V100 and CUDA 11.1 plus
 AWS cloud VM with Tesla V100 and CUDA 10.1.
 
-***********************************
-* INSTALLING CHEMPROP ON CENTOS 7 *
-***********************************
+* INSTALLING CHEMPROP ON CENTOS 7
+
 NOTE: Please see chemprop webpage for up-to-date instructions. Here is just
 what I did to get the program running on Jan 2020.
 
@@ -87,9 +80,8 @@ your calculation card on multiple GPU systems!
     several computers, it is good idea to use different copies for each
     computer (you may define this file in protocol file).
 
-**************************
-* HOW TO RUN SIMULATION  *
-**************************
+* HOW TO RUN SIMULATION
+
 PREPARING
 
 1. You should have the SMILES of the whole database (for example, mols.smi)
@@ -122,9 +114,8 @@ To calculate recalls at top 1%:
 
 python hasten_analyze_simulation -m testscreen.db -d dock.txt
 
-********************************
-* HOW TO RUN HASTEN WITH GLIDE *
-********************************
+* HOW TO RUN HASTEN WITH GLIDE
+
 PREPARING
 
 1. You should have the SMILES of the whole database (for example, mols.smi).
@@ -152,9 +143,8 @@ RUNNING SCREEN
 
 python hasten.py -m realscreen.db -p glide.protocol
 
-**********************
-* HAND-OPERATED MODE *
-**********************
+* HAND-OPERATED MODE
+
 When working with large (100M+) databases, even the ML calculations start
 to take very long time and several computers are needed.
 
@@ -182,9 +172,8 @@ python hasten.py -m para_simulate.protocol --hand-operate dock -i 2
 
 Now you have docked two iterations, continue with training iter3 model
 
-********
-* TIPS *
-********
+* TIPS
+
 - you may want to start from some other iteration than 1 sometimes. This 
 can be defined by using "-i" parameter for hasten.py
 
@@ -194,9 +183,8 @@ doing docking (useful when your docking script can take SMILES input directly).
 - running long runs distributed across different computers is better done
 via the hand-operated mode
 
-*****************************************************
-* INPUT/OUTPUT DATA FORMATS FOR ADDITIONAL PLUG-INS *
-*****************************************************
+* INPUT/OUTPUT DATA FORMATS FOR ADDITIONAL PLUG-INS
+
 Conformer generation:
 
     - hasten.py starts the confgen-script giving two parameters:

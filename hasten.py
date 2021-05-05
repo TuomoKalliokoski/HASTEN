@@ -330,7 +330,7 @@ def run_ml_pred(protocol,db,iteration,mode="normal"):
         sqlstr="SELECT smiles,hastenid FROM data WHERE dock_score IS NULL"
         db_batch_size = 4000000
         db_cursor = c.execute(sqlstr)
-        rowsmiles = db_cursor.fetchmany(db_batch_size)
+        rowsmiles = c.fetchmany(db_batch_size)
         chunk = []
         while len(rowsmiles) > 0:
             while len(rowsmiles) > 0:
@@ -359,16 +359,22 @@ def run_ml_pred(protocol,db,iteration,mode="normal"):
             print("Predicting:",filename)
             pred_chunk(protocol,None,None,iteration,filename)
     elif mode=="normal":
+        print("Running prediction in normal, single-CPU mode...")
         conn=sqlite3.connect(db)
         db_cursor = conn.cursor()
         sqlstr="SELECT smiles,hastenid FROM data WHERE dock_score IS NULL"
-        # calculate each chunk at the time
-        db_batch_size = protocol["pred_size"]
-        rowsmiles = db_cursor.fetchmany(db_batch_size)
+        # note we must load everything here to RAM as we are also updating
+        # the DB inside the loop - sqlite3 gets stuck otherwise
+        db_cursor = db_cursor.execute(sqlstr)
+        rowsmiles = db_cursor.fetchall()
+        conn.close()
         while len(rowsmiles)>0:
-            print(len(rowsmiles),"compounds left to be ranked by the ML model")
-            pred_chunk(protocol,db,rowsmiles,iteration)
-            rowsmiles = db_cursor.fetchmany(db_batch_size)
+            chunk = []
+            while len(chunk)<=protocol["pred_size"] and len(rowsmiles)>0:
+                chunk.append(rowsmiles.pop())
+            if len(chunk)>0:
+                print(len(rowsmiles),"compounds left to be ranked by the ML model")
+                pred_chunk(protocol,db,chunk,iteration)
     else:
         print("BUG IN ml_chemprop_pred(): invalid mode!")
         sys.exit(2)
@@ -416,6 +422,7 @@ def write_pred_to_db(db,filename):
         sys.exit(1)
     finally:
         if conn:
+            print("Importing predictions to db...")
             c=conn.cursor()
             c.executemany("UPDATE data SET pred_score = ? WHERE hastenid = ?",pred_scores)
             conn.commit()

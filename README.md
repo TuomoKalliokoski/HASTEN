@@ -1,7 +1,12 @@
-HASTEN (macHine leArning booSTEd dockiNg), Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>
+HASTEN (macHine leArning booSTEd dockiNg)
+
+Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>
+
+See the article at Molecular Informatics (2021) for additional information (http://doi.org/10.1002/minf.202100089)
+
 ***************
 * INTRODUCTION
-*************
+***************
 HASTEN is a tool that makes it easier to run machine learning boosted
 virtual screening workflows. It is written in very general Python without
 relying in non-standard libraries so it is easy to run in any

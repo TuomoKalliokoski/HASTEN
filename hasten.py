@@ -52,7 +52,8 @@ def parse_cmd_line():
     parser.add_argument("-p","--protocol",required=True,type=str,help="Screening protocol file")
     parser.add_argument("-i","--iteration",required=False,type=int,help="Iteration number to start")
 
-    parser.add_argument("-a","--hand-operate",required=False,type=str,choices=["dock","train","split-pred","pred","import-pred"],help="Hand-operated mode (only for expert users)")
+    parser.add_argument("-a","--hand-operate",required=False,type=str,choices=["dock","train","split-dock","split-pred","pred","import-pred","simu-dock"],help="Hand-operated mode (only for expert users)")
+    parser.add_argument("-c","--cpu",required=False,type=int,help="In hand-operated mode: how many CPUs to use")
     return parser.parse_args()
 
 def files_exist(args):
@@ -78,7 +79,7 @@ def get_protocol(filename):
     :return: Protocol dictionary
     """
     protocol = {}
-    keywords = {"confgen":"file","docking":"file","ml_train":"file","ml_pred":"file","dataset_size":"float","dataset_split":"floats3","train_mode":"text","random_seed":"integer","pred_size":"integer","stop_criteria":"integer","pred_split":"integer"}
+    keywords = {"confgen":"file","docking":"file","ml_train":"file","ml_pred":"file","dataset_size":"float","dataset_split":"floats3","train_mode":"text","random_seed":"integer","pred_size":"integer","stop_criteria":"integer","pred_split":"integer","dock_split":"integer"}
     for line in open(filename,"rt"):
         if line[0].startswith("#"):
             continue
@@ -127,7 +128,7 @@ def get_protocol(filename):
 
     return protocol
 
-def pick_compounds_for_docking(protocol,db,iteration):
+def pick_compounds_for_docking(protocol,db,iteration,skip_confgen=False):
     """
     Pick set of compounds from database for docking and save them into
     output files.
@@ -135,6 +136,7 @@ def pick_compounds_for_docking(protocol,db,iteration):
     :param protocol: Protocol dictionary
     :param db: The filename of SQlite3 database
     :param iteration: iteration integer
+    :param skip_confgen: Skip confgen (useful in hand-operate mode)
     """
     try:
         conn=sqlite3.connect(db)
@@ -143,7 +145,10 @@ def pick_compounds_for_docking(protocol,db,iteration):
         sys.exit(1)
     if conn:
         c = conn.cursor()
-        number_of_mols=c.execute("SELECT COUNT() FROM data").fetchone()[0]
+        # counting is very slow and we are not deleting so use a hack here
+        # https://stackoverflow.com/questions/8988915/sqlite-count-slow-on-big-tables
+        #number_of_mols=c.execute("SELECT COUNT() FROM data").fetchone()[0]
+        number_of_mols=c.execute("SELECT MAX(_ROWID_) FROM data LIMIT 1").fetchone()[0]
         number_to_dock=int(round(protocol["dataset_size"]*number_of_mols))
         print("Number of molecules in the database",number_of_mols)
         print("Picking",protocol["dataset_size"]*100,"% for docking (",number_to_dock,")...")
@@ -156,31 +161,41 @@ def pick_compounds_for_docking(protocol,db,iteration):
             to_dock=c.execute("SELECT hastenid FROM data WHERE dock_score IS NULL ORDER BY pred_score LIMIT ?",[number_to_dock,]).fetchall()
         smilesids = []
         for smile_id in to_dock: smilesids.append(smile_id[0])
-       
-        # check by joining to confs table which of the mols have already confs 
-        sqlstr="SELECT data.hastenid FROM data INNER JOIN confs ON confs.hastenid=data.hastenid WHERE confs.conf IS NOT NULL AND data.hastenid IN {}".format(str(tuple(smilesids))).replace("[","").replace("]","")
-        confs_avail=c.execute(sqlstr).fetchall()
-        conn.close()
+
+        if not skip_confgen:
+            # check by joining to confs table which of the mols have already confs 
+            sqlstr="SELECT data.hastenid FROM data INNER JOIN confs ON confs.hastenid=data.hastenid WHERE confs.conf IS NOT NULL AND data.hastenid IN {}".format(str(tuple(smilesids))).replace("[","").replace("]","")
+            confs_avail=c.execute(sqlstr).fetchall()
+            conn.close()
    
-        # add to list those that do not have conf 
-        confgen_smilesids = []
-        for smile_id in confs_avail: 
-            confgen_smilesids.append(smile_id[0])
-        calc_confs = []
-        for smile_id in smilesids:
-            if smile_id not in confgen_smilesids:
-                calc_confs.append(smile_id)
+            # add to list those that do not have conf 
+            confgen_smilesids = []
+            for smile_id in confs_avail: 
+                confgen_smilesids.append(smile_id[0])
+            calc_confs = []
+            for smile_id in smilesids:
+                if smile_id not in confgen_smilesids:
+                    calc_confs.append(smile_id)
+        else:
+            calc_confs = []
     
         return(smilesids,calc_confs)
 
-def run_confgen(protocol,db,smilesids):
+def run_confgen(protocol,db,smilesids,runmode="dock",cpu=None):
     """
     Run outside conformer generator (simply starts external code)
 
     :param protocol: Protocol dictionary
     :param db: The filename of SQlite3 database
     :param smilesids: List of hastenids to be exported
+    :param runmode: Either "dock" (default) or "split-dock"
+    :param cpu: if in "split-dock", the number of CPUs to use
     """
+    
+    # we do the conformers on the fly with docking!
+    if runmode=="split-dock":
+        print("NOTE: splitted mode activate: preparing files for both confgen and docking...")
+        return
     try:
         conn=sqlite3.connect(db)
     except:
@@ -191,20 +206,24 @@ def run_confgen(protocol,db,smilesids):
         sqlstr="SELECT smiles,smilesid,hastenid FROM data WHERE hastenid IN {}".format(str(tuple(smilesids))).replace("[","").replace("]","")
         rowsmiles=c.execute(sqlstr).fetchall()
         conn.close()
- 
-        temp_name = tempfile.mkstemp(".smi","hasten_confgen_","/tmp")[1]
-        w = open(temp_name,"wt")
-        for row in rowsmiles:
-            w.write(row[0]+" "+row[1]+"|"+str(row[2])+"\n")
-        w.close()
-        os.system(protocol["confgen"]+" "+temp_name+" "+db)
-        # clean up if the confgen script did not already
-        try:
-            os.unlink(temp_name)
-        except:
-            pass
 
-def run_docking(protocol,db,smilesids,iteration):
+        if runmode == "dock":
+            temp_name = tempfile.mkstemp(".smi","hasten_confgen_","/tmp")[1]
+            w = open(temp_name,"wt")
+            for row in rowsmiles:
+                w.write(row[0]+" "+row[1]+"|"+str(row[2])+"\n")
+            w.close()
+            os.system(protocol["confgen"]+" "+temp_name+" "+db)
+            # clean up if the confgen script did not already
+            try:
+                os.unlink(temp_name)
+            except:
+                pass
+        else:
+            print("BUG AT RUN_CONFGEN!!!!")
+            sys.exit(10)
+
+def run_docking(protocol,db,smilesids,iteration,runmode="dock",cpu=1):
     """
     Run outside docking (simply starts external code)
 
@@ -212,17 +231,14 @@ def run_docking(protocol,db,smilesids,iteration):
     :param db: The filename of SQlite3 database
     :param smilesids: List of hastenids to be exported
     :param iteration: iteration integer
+    :param runmode: Either "dock" (default) or "split-dock" or "simu-dock"
+    :param cpu: if in "split-dock", the number of CPUs to use
     """
     db_chunk_size=123456
-    try:
-        conn=sqlite3.connect(db)
-    except:
-        print("Error while accessing database!")
-        sys.exit(1)
-    if conn:
-        c = conn.cursor()
+    conn=sqlite3.connect(db)
+    c = conn.cursor()
+    if runmode == "dock":
         sqlstr="SELECT conf,data.hastenid,data.smilesid FROM confs INNER JOIN data ON data.hastenid=confs.hastenid WHERE data.hastenid IN {}".format(str(tuple(smilesids))).replace("[","").replace("]","")
- 
         temp_name = tempfile.mkstemp(".out","hasten_dock_confs_","/tmp")[1]
         temp2_name = tempfile.mkstemp(".txt","hasten_dock_ids_","/tmp")[1]
         w = open(temp_name,"wb")
@@ -246,6 +262,47 @@ def run_docking(protocol,db,smilesids,iteration):
             pass
         try:
             os.unlink(temp2_name)
+        except:
+            pass
+    elif runmode == "split-dock":
+        cur_chunk = 1
+        sqlstr="SELECT smiles,smilesid,hastenid FROM data WHERE hastenid IN {}".format(str(tuple(smilesids))).replace("[","").replace("]","")
+        rowsmiles=c.execute(sqlstr).fetchall()
+        conn.close()
+        chunk = []
+        while len(rowsmiles) > 0:
+            chunk.append(rowsmiles.pop())
+            if len(chunk)>=protocol["dock_split"]:
+                if not os.path.exists("DOCK_"+str(iteration)+"_"+str(cur_chunk)):
+                    os.mkdir("DOCK_"+str(iteration)+"_"+str(cur_chunk))
+                chunk_filename = "DOCK_"+str(iteration)+"_"+str(cur_chunk)+"/iter"+str(iteration)+"_dock_input.smi"
+                w = open(chunk_filename,"wt")
+                for row in chunk:
+                    w.write(row[0]+" "+row[1]+"|"+str(row[2])+"\n")
+                w.close()
+                chunk = []
+                cur_chunk += 1
+        # make sure the end is there also
+        if len(chunk)>0:
+            if not os.path.exists("DOCK_"+str(iteration)+"_"+str(cur_chunk)):
+                os.mkdir("DOCK_"+str(iteration)+"_"+str(cur_chunk))
+            chunk_filename = "DOCK_"+str(iteration)+"_"+str(cur_chunk)+"/iter"+str(iteration)+"_dock_input.smi"
+            w = open(chunk_filename,"wt")
+            for row in chunk:
+                w.write(row[0]+" "+row[1]+"|"+str(row[2])+"\n")
+            w.close()
+    elif runmode=="simu-dock":
+        sqlstr="SELECT smiles,smilesid,hastenid FROM data WHERE hastenid IN {}".format(str(tuple(smilesids))).replace("[","").replace("]","")
+        rowsmiles=c.execute(sqlstr).fetchall()
+        conn.close()
+        temp2_name = tempfile.mkstemp(".txt","hasten_dock_ids_","/tmp")[1]
+        w2 = open(temp2_name,"wt")
+        for row in rowsmiles: 
+            w2.write(str(row[1])+"|"+str(row[2])+"\n")
+        w2.close()
+        os.system(protocol["docking"]+" "+temp2_name+" "+db+" "+temp2_name+" "+str(iteration))
+        try:
+            os.unlink(temp_name)
         except:
             pass
 
@@ -322,7 +379,6 @@ def run_ml_pred(protocol,db,iteration,mode="normal"):
         number_of_comps=int(c.execute(sqlstr).fetchall()[0][0])
         sqlstr="SELECT smiles,hastenid FROM data WHERE dock_score IS NULL"
         per_machine = int(number_of_comps/protocol["pred_split"])
-        print("Compounds per machine optimal:",per_machine)
         cur_machine=1
         cur_machine_count=0
         cur_chunk = 1
@@ -330,12 +386,12 @@ def run_ml_pred(protocol,db,iteration,mode="normal"):
         sqlstr="SELECT smiles,hastenid FROM data WHERE dock_score IS NULL"
         db_batch_size = 4000000
         db_cursor = c.execute(sqlstr)
-        rowsmiles = c.fetchmany(db_batch_size)
+        rowsmiles = db_cursor.fetchmany(db_batch_size)
         chunk = []
         while len(rowsmiles) > 0:
             while len(rowsmiles) > 0:
                 chunk.append(rowsmiles.pop())
-                cur_machine_count+=1
+                cur_machine_count += 1
                 if len(chunk)>=protocol["pred_size"] or cur_machine_count>=per_machine:
                     if not os.path.exists("PRED"+str(cur_machine)):
                         os.mkdir("PRED"+str(cur_machine))
@@ -347,11 +403,11 @@ def run_ml_pred(protocol,db,iteration,mode="normal"):
                         cur_machine_count = 0
                         cur_machine += 1
                         cur_chunk = 1
-                        if not os.path.exists("PRED"+str(cur_machine)):
+                        if len(rowsmiles)>0 and not os.path.exists("PRED"+str(cur_machine)):
                             os.mkdir("PRED"+str(cur_machine))
             rowsmiles = db_cursor.fetchmany(db_batch_size)
         conn.close()
-        # write leftover compounds in last chunk
+        # write leftover compounds in the last chunk
         if len(chunk)>0:
             chunk_filename = write_for_ml(chunk,with_score=False,filename="PRED"+str(cur_machine)+"/iter"+str(iteration)+"_pred_input_"+str(cur_machine)+"_"+str(cur_chunk+1)+".csv")
     elif mode=="para":
@@ -359,21 +415,24 @@ def run_ml_pred(protocol,db,iteration,mode="normal"):
             print("Predicting:",filename)
             pred_chunk(protocol,None,None,iteration,filename)
     elif mode=="normal":
-        print("Running prediction in normal, single-CPU mode...")
         conn=sqlite3.connect(db)
-        db_cursor = conn.cursor()
+        c = conn.cursor()
         sqlstr="SELECT smiles,hastenid FROM data WHERE dock_score IS NULL"
-        # note we must load everything here to RAM as we are also updating
-        # the DB inside the loop - sqlite3 gets stuck otherwise
-        db_cursor = db_cursor.execute(sqlstr)
+        # we need to get all molecules at once due to sqlite3 locking
+        db_batch_size = protocol["pred_size"]
+        db_cursor = c.execute(sqlstr)
         rowsmiles = db_cursor.fetchall()
         conn.close()
-        while len(rowsmiles)>0:
-            chunk = []
-            while len(chunk)<=protocol["pred_size"] and len(rowsmiles)>0:
-                chunk.append(rowsmiles.pop())
-            if len(chunk)>0:
-                print(len(rowsmiles),"compounds left to be ranked by the ML model")
+        # calculate each chunk at the time
+        print(len(rowsmiles),"compounds to predict")
+        chunk=[]
+        while len(rowsmiles) >0:
+            chunk.append(rowsmiles.pop())
+            if len(chunk)>=protocol["pred_size"]:
+                print(len(rowsmiles),"compounds to be ranked by the ML model")
+                pred_chunk(protocol,db,chunk,iteration)
+                chunk = []
+        if len(chunk)>0:
                 pred_chunk(protocol,db,chunk,iteration)
     else:
         print("BUG IN ml_chemprop_pred(): invalid mode!")
@@ -422,7 +481,6 @@ def write_pred_to_db(db,filename):
         sys.exit(1)
     finally:
         if conn:
-            print("Importing predictions to db...")
             c=conn.cursor()
             c.executemany("UPDATE data SET pred_score = ? WHERE hastenid = ?",pred_scores)
             conn.commit()
@@ -477,18 +535,6 @@ def run_hasten(protocol,args):
     :param args: Parsed arguments
     """
     random.seed(protocol["random_seed"])
-    print()
-    print("    )        (                 )  ")
-    print(" ( /(  (     )\ )  *   )    ( /(  ")
-    print(" )\()) )\   (()/(` )  /((   )\()) ")
-    print("((_)((((_)(  /(_))( )(_))\ ((_)\  ")
-    print(" _((_)\ _ )\(_)) (_(_()|(_) _((_) ")
-    print("| || (_)_\(_) __||_   _| __| \| | ")
-    print("| __ |/ _ \ \__ \  | | | _|| .` | ")
-    print("|_||_/_/ \_\|___/  |_| |___|_|\_| ")
-    print()
-    print("HASTEN (macHine leArning booSTEd dockiNg) version 0.1")
-    print("https://github.com/TuomoKalliokoski/HASTEN")
     if args.iteration is not None:
         iteration = args.iteration
     else:
@@ -497,12 +543,12 @@ def run_hasten(protocol,args):
     if args.hand_operate is not None:
         print("Hand-operated mode activated.")
         print("Iteration",iteration)
-        if args.hand_operate == "dock":
-            compounds_for_docking,compounds_for_confgen = pick_compounds_for_docking(protocol,args.database,iteration)
+        if args.hand_operate == "dock" or args.hand_operate == "split-dock":
+            compounds_for_docking,compounds_for_confgen = pick_compounds_for_docking(protocol,args.database,iteration,skip_confgen=True)
             print(len(compounds_for_confgen),"molecules to conformer generation...")
-            run_confgen(protocol,args.database,compounds_for_confgen)
+            run_confgen(protocol,args.database,compounds_for_confgen,runmode=args.hand_operate,cpu=args.cpu)
             print("Running docking...")
-            run_docking(protocol,args.database,compounds_for_docking,iteration)
+            run_docking(protocol,args.database,compounds_for_docking,iteration,runmode=args.hand_operate,cpu=args.cpu)
         elif args.hand_operate == "train":
             print("Running machine learning training...")
             run_ml_train(protocol,args.database,iteration)
@@ -515,6 +561,11 @@ def run_hasten(protocol,args):
         elif args.hand_operate == "import-pred":
             print("Importing machine learning predictions...")
             run_ml_import(protocol,args.database)
+        elif args.hand_operate == "simu-dock":
+            print("Simulated hand-operated docking mode...")
+            compounds_for_docking,compounds_for_confgen = pick_compounds_for_docking(protocol,args.database,iteration,skip_confgen=True)
+            run_docking(protocol,args.database,compounds_for_docking,iteration,runmode="simu-dock")
+
     else:
         while iteration<=protocol["stop_criteria"]:
                 print("Iteration",iteration)
@@ -537,6 +588,22 @@ def run_hasten(protocol,args):
     print("\nHASTEN finished.")
 
 if __name__ == "__main__":
+    print("")
+    print("    )        (                 )  ")
+    print(" ( /(  (     )\ )  *   )    ( /(  ")
+    print(" )\()) )\   (()/(` )  /((   )\()) ")
+    print("((_)((((_)(  /(_))( )(_))\ ((_)\  ")
+    print(" _((_)\ _ )\(_)) (_(_()|(_) _((_) ")
+    print("| || (_)_\(_) __||_   _| __| \| | ")
+    print("| __ |/ _ \ \__ \  | | | _|| .` | ")
+    print("|_||_/_/ \_\|___/  |_| |___|_|\_| ")
+    print("")
+    print("HASTEN (macHine leArning booSTEd dockiNg) version 0.2")
+    print("https://github.com/TuomoKalliokoski/HASTEN")
+    print("")
+    print("Reference:")
+    print("Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089")
+    print("")
     args = parse_cmd_line()
     if (not files_exist(args)): sys.exit(1)
     protocol=get_protocol(args.protocol)

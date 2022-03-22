@@ -1,246 +1,166 @@
-HASTEN (macHine leArning booSTEd dockiNg)
+```
 
-Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>
+    )        (                 )
+ ( /(  (     )\ )  *   )    ( /(
+ )\()) )\   (()/(` )  /((   )\())
+((_)((((_)(  /(_))( )(_))\ ((_)\ 
+ _((_)\ _ )\(_)) (_(_()|(_) _((_)
+| || (_)_\(_) __||_   _| __| \| |
+| __ |/ _ \ \__ \  | | | _|| .` |
+|_||_/_/ \_\|___/  |_| |___|_|\_|
+```
 
-See the article at Molecular Informatics (2021) for additional information (http://doi.org/10.1002/minf.202100089)
+HASTEN (macHine leArning booSTEd dockiNg) version 1.0, https://github.com/TuomoKalliokoski/HASTEN
 
-***************
-* INTRODUCTION
-***************
+Reference: Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089
+
+# INTRODUCTION
 HASTEN is a tool that makes it easier to run machine learning boosted
 virtual screening workflows. It is written in very general Python without
 relying in non-standard libraries so it is easy to run in any
-Python environment
+Python environment.
 
-Currently only chemprop is supported as machine learning method, but it is
-easy to write Shell-scripts to plug-in your own methods. Glide from
-Schrodinger is supported in this version, but the same applies here:
-it should be easy to plug-in your own docking program. Do note that the
-HASTEN assumes that the smaller the docking score, the better the score.
+HASTEN comes by default configured to use chemprop (free) as the machine 
+learning engine and Schrödinger Glide (commercial) as the docking engine. It 
+is trivial to replace these, just remember that HASTEN assumes that 
+smaller the docking score, the better the pose.
 
-There is also simulation mode, which allows you to run benchmarks using
-existing docking_scores without in reality doing anything in 3D. This mode
-can be useful when adjusting the machine learning parameters.
+HASTEN is designed to work from mega-databases (millions of molecules) upto 
+giga-databases (billion of molecules). Largest database tested so far was
+4.1 billion (Enamine REAL). As working with larger databases involves
+processing of amounts of data, the process has been split into many smaller
+tasks that allow efficient distribution of calculations according to ones
+computational resources (either hundreds of cores locally or same amount in 
+cloud resources).
 
-* DESCRIPTION OF THE FILES
-1. hasten.py -- main program
-2. hasten_import.py -- import data
-3. hasten_export.py -- export data
-4. hasten_import_simulation.py -- allow simulation data to be used
-5. hasten_analyze_simulation.py -- calculate recall on simulated data
+# INSTALLATION 
+Before you can run HASTEN, make sure that you can use following programs:
 
-6. glide.protocol -- example protocol on how to run Glide
-7. simulate.protocol -- example protocol on how to run simulations
+Schrödinger Suite:
+- Phase (used for conformation generation)
+- Glide SP (used for docking)
 
-8. glide_confgen.py -- glide wrappers
-9. glide_confgen.sh
-10. glide_docking.py
-11. glide_docking.sh
+ChemProp:
+- chemprop_train for GPU (for training)
+- chemprop_pred for CPU (for predicting)
 
-12. simulate_confgen.py -- simulation wrappers
-13. simulate_confgen.sh
-14. simulate_docking.py
-15. simulate_docking.sh
+# HOW TO RUN THE SOFTWARE
+You should prepare your database to dock into SMILES file (example, mols.smi). 
+It is advisable to generate the SMILES using RDKit (for example, Galaxi
+had some broken molecules in it).
 
-* VERSIONS USED IN THE DEVELOPMENT
-- chemprop v1.1.0 (Jan 2020)
-- CUDA driver v10.1 and v10.2
-- anaconda3, conda 4.9.2
-- CentOS 7.6.1810 and 7.8.2003
+You can import molecules into database like this:
 
-Tested also Azure cloud VM with Tesla V100 and CUDA 11.1 plus
-AWS cloud VM with Tesla V100 and CUDA 10.1.
+```
+python3 hasten.py -m mols.db -a import-smiles -s mols.smi
+```
 
-**********************************
-* INSTALLING CHEMPROP ON CENTOS 7
-**********************************
-NOTE: Please see chemprop webpage for up-to-date instructions. Here is just
-what I did to get the program running on Jan 2020.
+NOTE: if database is missing, it will be created. Otherwise molecules will be added to the database.
 
-NOTE2: Even if you have chemprop already installed, check scripts
-ml_chemprop_train.sh and ml_chemprop_pred.sh and adjust correct GPU ID for
-your calculation card on multiple GPU systems!
+Plan your screen: critical parameter is the number of molecules docked per 
+iteration. For smaller databases (<10M) this should be something like 1% 
+(example,-f 0.01). When docking giga-sized databases (>1B) this should be 
+something like 0.1%. Pick a name for your screen as well (example, -n vs1). 
+In first iteration the compounds are selected randomly from the database 
+(-i 1) using 10 CPUs (-c 10) and to be docked with dockingtemplate.in 
+(LIGANFDILE will be replaced by HASTEN).
 
-0. Check the CUDA version of your system (nvidia-smi).
+## Iteration 1
 
-1. Install anaconda3 to your system.
+```
+python3 hasten.py -m mols.db -a pick -i 1 -n vs1 -f 0.01 -c 10 -d dockingtemplate.in
+```
 
-2. "git glone https://github.com/chemprop/chemprop.git"
+This will create SMILES files, .inp files for conformation genration and .in files for docking.  Run the job through Schrödinger Job Control (make sure after each step that all jobs are finished before launching the next one):
 
-3. "cd chemprop"
+```
+find vs1_iter1_*.inp -exec nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -HOST localhost:1 -NJOBS 1 \;
+find `pwd` -maxdepth 1 -name "vs1_iter1_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | xargs -0 bash -c
+find vs1_iter1_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
+```
 
-4. Edit "environment.yml" => change python=3.7.9, add 
-   cudatoolkit-<your-cuda-version> and set correct PyTorch version
-   (must be newer than 1.5.1).
+Glide will create docking scores in CSV files and PoseView-maegz files. 
+Process the raw docking data from Glide:
 
-5. "conda env create -f environment.yml"
+```
+python3 hasten.py -m mols.db -a import-dock -i 1 -n vs1
+```
 
-6. "conda activate chemprop"
+## Iteration 2 and forward
 
-7. "pip install -e ."
+Prepare input files for ML-training:
 
-8. "pip install git+https://github.com/bp-kelley/descriptastorus"
+```
+python3 hasten.py -m mols.db -a train -i 2 -n vs1
+```
 
-9. Define your GPU ID number to two HASTEN files: 
-    "ml_chemprop_pred.sh" and "ml_chemprop_train.sh" [--gpu]. You may
-    check your GPU ID numbers with "nvidia-smi" command. If you have
-    several computers, it is good idea to use different copies for each
-    computer (you may define this file in protocol file).
+Train the model using chemprop:
 
-************************
-* HOW TO RUN SIMULATION
-************************
-PREPARING
+```
+chemprop_train --dataset_type regression --target_columns docking_score --data_path train_vs1_iter2.csv --save_dir vs1_iter2 --batch_size 250 --no_cache_mol
+```
 
-1. You should have the SMILES of the whole database (for example, mols.smi)
-and the docking scores for each (for example, dock.txt). The text file should
-have the docking_score followed by the docking score (delimiter space).
+In order to filter out irrelevant predictions for compounds that will not
+be considered in the sorting of predicted score, we need to sample the
+database (0.001) to get the mean and standard deviation of predicted
+docking scores produced by the previously generated model:
 
-2. Import simulation data as "python hasten_import_simulation.py -s mols.smi -d dock.txt -o testscreen.db". This will create "testscreen.db".
+```
+python3 hasten.py -m mols.db -a sample-pred -i 2 -n vs1 -c 10
+```
 
-SCREENING PROTOCOL FILE
+To run the predictions on a single multicore machine that has enough RAM in it (note: remember to adjust --checkpoint_dir in later iterations):
 
-This file is just a simple text file (comments start with #). See example
-"simulate.protocol". Note that you may have to adjust machine learning
-shell scripts in multiple GPU-systems (by default, GPU ID 0 is used for
-calculations). In any case, edit the shell scripts so that the paths are
-correct!
+```
+ls -1 samplepred_vs1_iter2_cpu*.csv | awk '{ print "OMP_NUM_THREADS=1 chemprop_predict --num_workers 0 --no_cache_mol --no_cuda --checkpoint_dir vs1_iter2 --test_path",$1,"--preds_path output_"$1 }' | parallel -j 10 --bar
+```
 
-RUNNING A SIMULATION
+Run the command again, now the program detects that you have output_samplepred_*
+files in place:
 
-python hasten.py -m testscreen.db -p simulate.protocol
+```
+python3 hasten.py -m mols.db -a sample-pred -i 2 -n vs1 -c 10
+```
 
-EXPORTING SIMULATION RESULTS
+Note "Prediction cutoff:" value. This will be used to filter out predictions.
+Cut off is calculated as mean - 0.5 * sd and it is saved to cutoff.txt-file.
 
-After hasten.py finished, you may export the final results by typing:
+Run prediction on all molecules on the database using 10 parallel processes
+with 10k chunks:
 
-python hasten_export.py -m testscreen.db -c 10.0 -x scores.txt
+```    
+python3 hasten.py -m mols.db -a pred -i 2 -n vs1 -c 10 -x 10000
+```
 
-ANALYZING SIMULATION RESULTS
+This will create scripts "pred_vs1_iter2_cpu*.sh" that you can modify to change the calculation GPU/CPU. If you run out of RAM, adjust -x parameter to above.
+Loading of the model doesn't take that long.
 
-To calculate recalls at top 1%:
+```
+ls -1 pred_vs1_iter2_cpu*.sh | sed -e 's:^:sh :' | parallel -j 10 --bar
+```
 
-python hasten_analyze_simulation -m testscreen.db -d dock.txt
+Import results to the database (just imports everything from PRED* subdirectories):
 
-******************************
-* HOW TO RUN HASTEN WITH GLIDE
-******************************
+```
+python3 hasten.py -a import-pred -n vs1
+```
 
-PREPARING
+Pick the best predicted, not yet docked molecules for docking:
 
-1. You should have the SMILES of the whole database (for example, mols.smi).
+```
+python3 hasten.py -m mols.db -a pick -i 2 -n vs1 -f 0.01 -c 10 -d dockingtemplate.in
+```
 
-    python hasten_import.py -o realscreen.db -s mols.smi -d dock.txt
+After the docking, import the docking scores to the existing hasten_vs1.db:
 
-2. You can also include docking scores in text format (dock.txt) as shown
-above, but it is optional.
+```
+find vs1_iter2_*.inp -exec nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -HOST localhost:1 -NJOBS 1 \;
+find `pwd` -maxdepth 1 -name "vs1_iter2_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | xargs -0 bash -c
+find vs1_iter2_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
+```
 
-Do note that you can also split the database into small pieces and then
-import them file-by-file (handy if you are importing something like Enamine
-REAL).
+Process the raw docking data from Glide:
 
-SCREENING PROTOCOL FILE
-
-See example "glide.protocol". Remember to adjust machine learning shell
-scripts on multiple GPU machines and paths. Please also see "example.in". 
-Note that it is imporant to have these fields in your .in file (the script
-will replace INPUTMAEGZ with the input file when running):
-
-LIGANDFILE  INPUTMAEGZ
-POSE_OUTTYPE    ligandlib
-
-RUNNING SCREEN
-
-python hasten.py -m realscreen.db -p glide.protocol
-
-********************
-* HAND-OPERATED MODE
-********************
-
-When working with large (100M+) databases, even the ML calculations start
-to take very long time and several computers are needed.
-
-Hand-operated mode allows you to run the process one step at the end and
-in parallel calculations in mind.
-
-TWO ITERATION EXAMPLE
-
-db.db => your HASTEN database
-para_simulate.protocol => Your simulation protocol
-
-python hasten.py -m db.db -p para_simulate.protocol --hand-operate dock -i 1
-python hasten.py -m db.db -p para_simulate.protocol --hand-operate train -i 2
-python hasten.py -m db.db -p para_simulate.protocol --hand-operate split-pred -i 2
-
-Copy PRED1-PRED12 to another computers and iter2 model also
-
-At each computer:
-python hasten.py -p para_simulate.protocol --hand-operate pred -i 2
-
-After finished, copy *output* into one directory back where db.db is
-
-python hasten.py -m para_simulate.protocol --hand-operate import-pred
-python hasten.py -m para_simulate.protocol --hand-operate dock -i 2
-
-Now you have docked two iterations, continue with training iter3 model
-
-******
-* TIPS
-******
-- you may want to start from some other iteration than 1 sometimes. This 
-can be defined by using "-i" parameter for hasten.py
-
-- "smiles_confgen.sh" allows you skip the conformer generation completely when
-doing docking (useful when your docking script can take SMILES input directly).
-
-- running long runs distributed across different computers is better done
-via the hand-operated mode
-
-***************************************************
-* INPUT/OUTPUT DATA FORMATS FOR ADDITIONAL PLUG-INS
-***************************************************
-Conformer generation:
-
-    - hasten.py starts the confgen-script giving two parameters:
-        parameter #1: SMILES-file of the compounds. Each compound name is
-                      formatted as "<smilesid>|<hastenid>". SMILES is your
-                      own molecule ID and hastenid is integer and used for
-                      primary key in all Hasten tables.
-        parameter 2: the name of HASTEN-db file.
-
-    The conformer script should directly add conformers to "confs"-table
-    for the compounds (see glide_confgen.py as an example). You should store
-    all forms of the molecule as one big blob to the confs.
-
-Docking:
-
-    - hasten.py starts the docking-script with three parameters:
-        parameter #1: the conformations to be docked
-        parameter #2: the name of HASTEN .db-file
-        parameter #3: smilesid to hastenid mapping, seperated by |
-        parameter #4: iteration (integer)
-
-    See scripts "glide_docking.sh" and "glide_docking.py" on how to import
-    both dock_score and pose to correct place.
-
-Machine learning training:
-
-    - hasten.py starts the ML-train-script with three parameters:
-        parameter #1: training set CSV
-        parameter #2: validation set set CSV
-        parameter #3: test set CSV
-        parameter #4: iteration as "iter1", "iter2", etc...
-
-    Files all have same format: SMILES, hastenid, dock_score.
-    This is simple as you don't have to import anything back.
-
-Machine learning prediction:
-
-    - hasten.py submits chunks of predicted molecules in with following
-    command line parameters:
-        parameter #1: molecules in SMILES,hastenid-format
-        parameter #2: iteration in "iter1","iter2", etc.-format
-
-    - the input it expects back must be comma(,)-delimited file:
-            column #1: predicted docking score
-            column #2: hastenid
+```
+python3 hasten.py -m mols.db -a import-dock -i 2 -n vs1
+```

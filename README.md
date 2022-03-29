@@ -76,7 +76,7 @@ This will create SMILES files, .inp files for conformation genration and .in fil
 ```
 find vs1_iter1_*.inp -exec nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -HOST localhost:1 -NJOBS 1 \;
 find `pwd` -maxdepth 1 -name "vs1_iter1_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | parallel --bar -j 1
-find vs1_iter1_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
+find glide_vs1_iter1_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
 ```
 
 Glide will create docking scores in CSV files and PoseView-maegz files. 
@@ -155,8 +155,8 @@ After the docking, import the docking scores to the existing hasten_vs1.db:
 
 ```
 find vs1_iter2_*.inp -exec nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -HOST localhost:1 -NJOBS 1 \;
-find `pwd` -maxdepth 1 -name "vs1_iter2_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | xargs -0 bash -c
-find vs1_iter2_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
+find `pwd` -maxdepth 1 -name "vs1_iter2_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | parallel --bar -j 1
+find glide_vs1_iter2_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
 ```
 
 Process the raw docking data from Glide:

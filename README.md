@@ -71,12 +71,12 @@ In first iteration the compounds are selected randomly from the database
 python3 hasten.py -m mols.db -a pick -i 1 -n vs1 -f 0.01 -c 10 -d dockingtemplate.in
 ```
 
-This will create SMILES files, .inp files for conformation genration and .in files for docking.  Run the job through Schrödinger Job Control (make sure after each step that all jobs are finished before launching the next one):
+This will create SMILES files, .inp files for conformation generation and .in files for docking.
 
 ```
-find vs1_iter1_*.inp -exec nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -HOST localhost:1 -NJOBS 1 \;
+find vs1_iter1_*.inp -exec echo nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -WAIT -HOST localhost:1 -NJOBS 1 \; | parallel --bar -j 10
 find `pwd` -maxdepth 1 -name "vs1_iter1_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | parallel --bar -j 1
-find glide_vs1_iter1_*.in -exec nice $SCHRODINGER/glide {} -NICE -OVERWRITE -NJOBS 1 -HOST localhost:1 \;
+find glide_vs1_iter1_*.in -exec echo nice $SCHRODINGER/glide {} -NICE -OVERWRITE -WAIT -NJOBS 1 -HOST localhost:1 \; | parallel --bar -j 10
 ```
 
 Glide will create docking scores in CSV files and PoseView-maegz files. 

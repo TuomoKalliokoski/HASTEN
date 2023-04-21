@@ -10,9 +10,11 @@
 |_||_/_/ \_\|___/  |_| |___|_|\_|
 ```
 
-HASTEN (macHine leArning booSTEd dockiNg) version 1.0, https://github.com/TuomoKalliokoski/HASTEN
+HASTEN (macHine leArning booSTEd dockiNg) version 1.1, https://github.com/TuomoKalliokoski/HASTEN
 
-Reference: Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089
+References: 
+Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089
+Sivula T. Manuscript in preparation 2023.
 
 # INTRODUCTION
 HASTEN is a tool that makes it easier to run machine learning boosted
@@ -37,8 +39,8 @@ cloud resources).
 Before you can run HASTEN, make sure that you can use following programs:
 
 Schrödinger Suite:
-- Phase (used for conformation generation)
-- Glide SP (used for docking)
+- Phase (used for conformation generation):
+- Glide SP (used for docking):
 
 ChemProp:
 - chemprop_train for GPU (for training)
@@ -49,7 +51,7 @@ You should prepare your database to dock into SMILES file (example, mols.smi).
 It is advisable to generate the SMILES using RDKit (for example, Galaxi
 had some broken molecules in it).
 
-You can import molecules into database like this:
+Start the HASTEN procedure by import the SMILES to HASTEN database:
 
 ```
 python3 hasten.py -m mols.db -a import-smiles -s mols.smi
@@ -75,7 +77,7 @@ This will create SMILES files, .inp files for conformation generation and .in fi
 
 ```
 find vs1_iter1_*.inp -exec echo nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -WAIT -HOST localhost:1 -NJOBS 1 \; | parallel --bar -j 10
-find `pwd` -maxdepth 1 -name "vs1_iter1_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | parallel --bar -j 1
+find `pwd` -maxdepth 1 -name "vs1_iter1_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999:' | parallel --bar -j 10
 find glide_vs1_iter1_*.in -exec echo nice $SCHRODINGER/glide {} -NICE -OVERWRITE -WAIT -NJOBS 1 -HOST localhost:1 \; | parallel --bar -j 10
 ```
 
@@ -94,7 +96,7 @@ Prepare input files for ML-training:
 python3 hasten.py -m mols.db -a train -i 2 -n vs1
 ```
 
-Train the model using chemprop:
+Train the model using chemprop (use GPU here):
 
 ```
 chemprop_train --dataset_type regression --target_columns docking_score --data_path train_vs1_iter2.csv --save_dir vs1_iter2 --batch_size 250 --no_cache_mol
@@ -109,14 +111,14 @@ docking scores produced by the previously generated model:
 python3 hasten.py -m mols.db -a sample-pred -i 2 -n vs1 -c 10
 ```
 
-To run the predictions on a single multicore machine that has enough RAM in it (note: remember to adjust --checkpoint_dir in later iterations):
+To run these small set of predictions on ChemProp GPU:
 
 ```
-ls -1 samplepred_vs1_iter2_cpu*.csv | awk '{ print "OMP_NUM_THREADS=1 chemprop_predict --num_workers 0 --no_cache_mol --no_cuda --checkpoint_dir vs1_iter2 --test_path",$1,"--preds_path output_"$1 }' | parallel -j 10 --bar
+ls -1 samplepred_vs1_iter2_cpu*.csv | awk '{ print "chemprop_predict --checkpoint_dir vs1_iter2 --test_path",$1,"--preds_path output_"$1 }' | parallel -j 1 --bar
 ```
 
-Run the command again, now the program detects that you have output_samplepred_*
-files in place:
+Run the command again, now the program detects that you have the predictions
+done:
 
 ```
 python3 hasten.py -m mols.db -a sample-pred -i 2 -n vs1 -c 10
@@ -132,17 +134,16 @@ with 10k chunks:
 python3 hasten.py -m mols.db -a pred -i 2 -n vs1 -c 10 -x 10000
 ```
 
-This will create scripts "pred_vs1_iter2_cpu*.sh" that you can modify to change the calculation GPU/CPU. If you run out of RAM, adjust -x parameter to above.
-Loading of the model doesn't take that long.
+This will create scripts "pred_vs1_iter2_cpu.sh" that you can modify to change the calculation GPU/CPU. If you run out of RAM, adjust -x parameter to above.
 
 ```
 ls -1 pred_vs1_iter2_cpu*.sh | sed -e 's:^:sh :' | parallel -j 10 --bar
 ```
 
-Import results to the database (just imports everything from PRED* subdirectories):
+Import results to the database (just imports everything from PRED subdirectories):
 
 ```
-python3 hasten.py -a import-pred -n vs1
+python3 hasten.py -m mols.db -a import-pred -i 2 -n vs1
 ```
 
 Pick the best predicted, not yet docked molecules for docking:
@@ -151,7 +152,7 @@ Pick the best predicted, not yet docked molecules for docking:
 python3 hasten.py -m mols.db -a pick -i 2 -n vs1 -f 0.01 -c 10 -d dockingtemplate.in
 ```
 
-After the docking, import the docking scores to the existing hasten_vs1.db:
+Dock the picked compounds similarly to iteration 1:
 
 ```
 find vs1_iter2_*.inp -exec nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -HOST localhost:1 -NJOBS 1 \;
@@ -163,4 +164,12 @@ Process the raw docking data from Glide:
 
 ```
 python3 hasten.py -m mols.db -a import-dock -i 2 -n vs1
+```
+
+You can export the results to SMILES and MAEGZ (cutoff -10.0 used here):
+
+```
+python3 hasten.py -m mols.db -a status -n vs1
+python3 hasten.py -m mols.db -a export-smiles -n vs1 -s virtualhits-vs1.smi -u -10.0
+$SCHRODINGER/run hasten.py -m mols.db -a export-poses -n vs1 -u -10.0
 ```

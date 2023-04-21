@@ -1,7 +1,7 @@
-# NOTE: YOU WILL PROBABLY WANT TO DOWNLOAD VERSION 1.0 INSTEAD OF THE VERSION USED IN THE PUBLICATION:
-# git clone -b version1.0 https://github.com/TuomoKalliokoski/HASTEN
+# NOTE: YOU WILL PROBABLY WANT TO DOWNLOAD VERSION 1.1 INSTEAD OF THE VERSION USED IN THE PUBLICATION:
+# git clone -b version1.1 https://github.com/TuomoKalliokoski/HASTEN
 
-## Read the version 1.0 README at https://github.com/TuomoKalliokoski/HASTEN/tree/version1.0
+## Read the version 1.1 README at https://github.com/TuomoKalliokoski/HASTEN/tree/version1.1
 HASTEN (macHine leArning booSTEd dockiNg)
 
 Written by Tuomo Kalliokoski <tuomo.kalliokoski at orionpharma.com>

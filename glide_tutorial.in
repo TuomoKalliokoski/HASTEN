@@ -1,0 +1,3 @@
+FORCEFIELD   OPLS_2005
+GRIDFILE   glide-grid_tutorial.zip
+PRECISION   SP

@@ -1,0 +1,162 @@
+Tutorial on how to setup and run HASTEN.
+Written by Tuomo Kalliokoski, Orion Pharma, 2023-03-10
+
+INTRODUCTION
+************
+In this tutorial, we run HASTEN docking on one target picked from the
+DUD-E testset (thrb). Virtual hit cutoff is defined at docking_score <= -9.1.
+
+Note that this is completely dummy example: HASTEN will not boost that much
+the retrieval of highly scoring compounds with such small number of compounds
+(27465) in two iterations. When you are screening million-scale libraries,
+use 1.0% iteration step size and with billion-scale databases it is enough
+to use 0.1% iteration step size. Monitor the retrieval of high scoring
+compounds after each iteration to see when it makes sense to stop.
+
+Files included:
+    tutorial.smi - ligands+decoys just pooled together (library to dock)
+    glide_tutorial.in - Example Glide configuration file
+    glide-grid_tutorial.zip - Protein structure for docking
+
+You need these commercial tools:
+    - Schrödinger Suite (this tutorial was done with 2023-1 version)
+    - miniconda3 (industrial use often requires license)
+
+You need also an computer with GPU for the chemprop training.
+
+This tutorial was run on desktop with:
+    CPU: AMD Ryzen 9 5950X 16-Core Processor
+    RAM: 125Gi
+    GPU: NVIDIA GeForce RTX 3080 (Driver Version: 525.89.02, CUDA Version: 12.0)
+    OS: Ubuntu 22.04.2 LTS
+
+The calculations took approximately 30 minutes with this computer.
+
+
+INSTALLING REQUIRED SOFTWARE
+****************************
+1. Install miniconda3
+
+See example script "install_miniconda3.sh" and modify:
+    - /wrk/tuomo/anaconda3 => path where you installed anaconda3
+    - remove "conda token set MYCODE" if you are allowed to run free miniconda
+    or add your 48 characters long token code here
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+sh Miniconda3-latest-Linux-x86_64.sh
+
+2. Install chemprop
+
+conda create -n chemprop -y
+conda activate chemprop
+mamba install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia -y
+
+Now check that PyTorch can use GPU:
+python3
+import torch
+torch.cuda.is_available()
+    => should return True
+quit()
+
+git clone https://github.com/chemprop/chemprop.git
+cd chemprop
+mamba env update --file environment.yml
+pip install -e .
+
+Re-check that PyTorch can use GPU is still using the above example.
+
+3. Install some Linux tools if not already installed in your OS
+
+mamba install parallel gawk
+
+4. Install HASTEN
+
+I guess you already copied the files, but:
+
+git clone https://github.com/TuomoKalliokoski/HASTEN -b v1.1
+
+RUNNING TUTORIAL
+****************
+1. First import tutorial structures into HASTEN db:
+
+python3 hasten.py -a import-smiles -m tutorial.db -s tutorial.smi
+
+2. Pick iteration 1 (dock 1.0% with 16 cores):
+
+python3 hasten.py -a pick -m tutorial.db -i 1 -n vs -f 0.01 -c 16 -d glide_tutorial.in
+
+3. Generate ligand conformations using 16 cores using Phase/LigPrep:
+
+time find vs_iter1_*.inp -exec echo nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -WAIT -HOST localhost:1 -NJOBS 1 \; | parallel --bar -j 16
+    2m12.189s
+
+4. Convert from Phase DB to maegz:
+
+find `pwd` -maxdepth 1 -name "vs_iter1_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999 -WAIT:' | parallel --bar -j 16
+
+5. Dock with Glide:
+
+time find glide_vs_iter1_*.in -exec echo nice $SCHRODINGER/glide {} -NICE -OVERWRITE -WAIT -NJOBS 1 -HOST localhost:1 \; | parallel --bar -j 16
+    10m18.098s
+
+6. Import docking results to HASTEN:
+
+python3 hasten.py -a import-dock -m tutorial.db -i 1 -n vs
+
+7. See how many virtual hits we have (note you might have slightly different numbers due to randomness):
+
+python3 hasten.py -a export-smiles -m tutorial.db -n vs -u -9.1 -s virtualhits_iter1.smi
+
+2 virtual hits by random selection.
+
+8. Start iteration 2 by training a model based on dockings in iter 1:
+
+python3 hasten.py -a train -m tutorial.db -n vs -i 2
+time chemprop_train --dataset_type regression --target_columns docking_score --data_path train_vs_iter2.csv --save_dir vs_iter2 --batch_size 250 --no_cache_mol
+    0m6.425s
+
+9. Sample prediction cutoff (important feature when you are doing giga-scale screening). Note that GPU is used,
+this is so small calculation that it can be done in a single computer always:
+
+python3 hasten.py -a sample-pred -m tutorial.db -n vs -i 2 -c 16
+ls -1 samplepred_vs_iter2_cpu*.csv | awk '{ print "chemprop_predict --checkpoint_dir vs_iter2 --test_path",$1,"--preds_path output_"$1 }' | parallel --bar -j 1
+python3 hasten.py -a sample-pred -m tutorial.db -n vs -i 2 -c 16
+
+10. Predict docking scores for all compounds with CPU (use a really small -x here to test parallel calculation,
+normally value like 10000 is used. It depends on your computer i.e. how much RAM you have per parallel
+task):
+
+python3 hasten.py -m tutorial.db -a pred -i 2 -n vs -c 16 -x 100
+time ls -1 pred_vs_iter2_cpu*.sh | sed -e 's:^:sh :' | parallel -j 16 --bar
+    0m50.566s
+
+11. Import prediction results back to HASTEN:
+
+python3 hasten.py -a import-pred -m tutorial.db -n vs -i 2
+
+12. Pick compounds to dock for iteration 2:
+
+python3 hasten.py -a pick -m tutorial.db -i 2 -n vs -f 0.01 -c 16 -d glide_tutorial.in
+
+13. Generate ligand conformations using 16 cores using Phase/LigPrep:
+
+time find vs_iter2_*.inp -exec echo nice $SCHRODINGER/pipeline -prog phase_db {} -OVERWRITE -WAIT -HOST localhost:1 -NJOBS 1 \; | parallel --bar -j 16
+    2m11.877s
+
+14. Convert from Phase DB to maegz:
+
+find `pwd` -maxdepth 1 -name "vs_iter2_*.phdb" -exec echo $SCHRODINGER/phase_database {} export -omae {} \; | sed -e 's:.phdb$: -get 1 -limit 99999999 -WAIT:' | parallel --bar -j 16
+
+15. Dock with Glide:
+
+time find glide_vs_iter2_*.in -exec echo nice $SCHRODINGER/glide {} -NICE -OVERWRITE -WAIT -NJOBS 1 -HOST localhost:1 \; | parallel --bar -j 16
+    11m18.570s
+
+16. Import docking results to HASTEN:
+
+python3 hasten.py -a import-dock -m tutorial.db -i 2 -n vs
+
+17. See how many virtual hits we have:
+
+python3 hasten.py -a export-smiles -m tutorial.db -n vs -u -9.1 -s virtualhits_iter1-2.smi
+
+That's it! Iteration 3 is exactly like iteration 2, but you just switch iteration numbers (goto step 8).

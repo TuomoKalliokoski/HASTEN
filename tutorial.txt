@@ -102,9 +102,10 @@ time find glide_vs_iter1_*.in -exec echo nice $SCHRODINGER/glide {} -NICE -OVERW
 
 python3 hasten.py -a import-dock -m tutorial.db -i 1 -n vs
 
-7. See how many virtual hits we have (note you might have slightly different numbers due to randomness):
+7. See how many virtual hits we have (note you might have slightly different numbers due to randomness) and export them with Schrodinger:
 
 python3 hasten.py -a export-smiles -m tutorial.db -n vs -u -9.1 -s virtualhits_iter1.smi
+$SCHRODINGER/run hasten.py -m tutorial.db -a export-poses -n vs -u -9.1
 
 2 virtual hits by random selection.
 
@@ -158,5 +159,6 @@ python3 hasten.py -a import-dock -m tutorial.db -i 2 -n vs
 17. See how many virtual hits we have:
 
 python3 hasten.py -a export-smiles -m tutorial.db -n vs -u -9.1 -s virtualhits_iter1-2.smi
+$SCHRODINGER/run hasten.py -m tutorial.db -a export-poses -n vs -u -9.1
 
 That's it! Iteration 3 is exactly like iteration 2, but you just switch iteration numbers (goto step 8).

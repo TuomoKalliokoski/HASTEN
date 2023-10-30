@@ -29,6 +29,10 @@
 """
 HASTEN main program
 
+v1.1.2:
+    - support for importing gzip compressed SMILES added
+    - fixed couple of variable names in import_smiles (reported by lewisri2)
+
 v1.1:
     - failed dockings are excluded from the training [study by Sivula et al]. Switch "-t" added
     - better on-line help implemented
@@ -45,7 +49,7 @@ v1.1:
 hastentutorial="""
 
 You need three input files before you can start HASTEN:
-    1. database to dock in SMILES (space delimited)
+    1. database to dock in SMILES (space delimited) (can be gzip compressed)
     2. Glide docking template (.in file)
     3. Glide docking grid that is defined in #2
 
@@ -64,6 +68,7 @@ import tempfile
 import glob
 import shutil
 import statistics
+import gzip
 
 def parse_cmd_line():
     """
@@ -77,7 +82,7 @@ def parse_cmd_line():
 
     parser.add_argument("-a","--action",required=True,type=str,choices=["import-smiles","pick","import-dock","train","sample-pred","pred","import-pred","status","export-smiles","export-poses"],help="Action to perform")
     parser.add_argument("-c","--cpu",default=1,required=False,type=int,help="How many CPUs to use")
-    parser.add_argument("-s","--smiles",required=False,type=str,help="SMILES filename when importing/exporting")
+    parser.add_argument("-s","--smiles",required=False,type=str,help="SMILES filename when importing/exporting (.gz supported in import)")
     parser.add_argument("-n","--name",required=False,type=str,help="Name for the virtual screening")
     parser.add_argument("-f","--fraction",required=False,type=float,help="Fraction of database to dock in each iteration")
     parser.add_argument("-d","--dockingtemplate",required=False,type=str,help="Filename of docking template")
@@ -259,13 +264,16 @@ def import_smiles(database,smilesfile):
     else:
         print(" to an existing database ",end="")
     print(database)
-    conn=sqlite3.connect(args.database)
+    conn=sqlite3.connect(database)
     c=conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS data (hastenid INTEGER PRIMARY KEY,smiles TEXT,smilesid TEXT)")
     chunksize=1000000
     to_db = []
     imported=0
-    with open(args.smiles) as smilesfile:
+    opener = open
+    if ".gz" in smilesfile:
+        opener = gzip.open
+    with opener(args.smiles,"rt") as smilesfile:
         for row in csv.reader(smilesfile,delimiter=" "):
             if len(row)<2:
                 print("Error: the input SMILES file should be space-delimited file, import stopped.")
@@ -283,7 +291,7 @@ def import_smiles(database,smilesfile):
         imported+=len(to_db)
     conn.close()
     print("Done, imported",imported,"molecules")
-    assist_user("pick 1st iteration compounds to be docked","python3 "+sys.argv[0]+" -m "+args.database+" -a pick -i 1 -n <jobname> -f <fraction_to_dock> -c <cpus_to_use> -d <template.in>")
+    assist_user("pick 1st iteration compounds to be docked","python3 "+sys.argv[0]+" -m "+database+" -a pick -i 1 -n <jobname> -f <fraction_to_dock> -c <cpus_to_use> -d <template.in>")
     
 def import_dock(database,iteration,name,failed):
     """
@@ -663,12 +671,12 @@ if __name__ == "__main__":
     print("| __ |/ _ \ \__ \  | | | _|| .` | ")
     print("|_||_/_/ \_\|___/  |_| |___|_|\_| ")
     print("")
-    print("HASTEN (macHine leArning booSTEd dockiNg) version 1.1")
+    print("HASTEN (macHine leArning booSTEd dockiNg) version 1.1.2")
     print("https://github.com/TuomoKalliokoski/HASTEN")
     print("")
     print("References:")
-    print("Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089")
-    print("Sivula T et al. Submitted 2023, doi:10.26434/chemrxiv-2023-g34tx")
+    print("Kalliokoski T. Mol. Inform. 2021, doi:10.1002/minf.202100089")
+    print("Sivula T et al.  J. Chem. Inf. Model. 2023, doi:10.1021/acs.jcim.3c01239")
     print("")
     args = parse_cmd_line()
     if (not files_exist(args)): sys.exit(1)

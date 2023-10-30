@@ -13,8 +13,8 @@
 HASTEN (macHine leArning booSTEd dockiNg) version 1.1.2, https://github.com/TuomoKalliokoski/HASTEN
 
 References: 
-Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089
-Sivula T. Manuscript in preparation 2023.
+Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089, 
+Sivula T et al.  J. Chem. Inf. Model. 2023, doi:10.1021/acs.jcim.3c01239
 
 # INTRODUCTION
 HASTEN is a tool that makes it easier to run machine learning boosted

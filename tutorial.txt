@@ -72,7 +72,7 @@ mamba install parallel gawk
 
 I guess you already copied the files, but:
 
-git clone https://github.com/TuomoKalliokoski/HASTEN -b v1.1
+git clone https://github.com/TuomoKalliokoski/HASTEN -b version1.1
 
 RUNNING TUTORIAL
 ****************

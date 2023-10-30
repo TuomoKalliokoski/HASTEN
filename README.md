@@ -10,7 +10,7 @@
 |_||_/_/ \_\|___/  |_| |___|_|\_|
 ```
 
-HASTEN (macHine leArning booSTEd dockiNg) version 1.1, https://github.com/TuomoKalliokoski/HASTEN
+HASTEN (macHine leArning booSTEd dockiNg) version 1.1.2, https://github.com/TuomoKalliokoski/HASTEN
 
 References: 
 Kalliokoski T. Molecular Informatics 2021, doi:10.1002/minf.202100089
